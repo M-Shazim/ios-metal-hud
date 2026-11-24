@@ -35,7 +35,8 @@ case "$arg" in
   genshin)   BUNDLE="com.miHoYo.GenshinImpact" ;;
   roblox)    BUNDLE="com.roblox.Roblox" ;;
   coc)       BUNDLE="com.supercell.magic" ;;
-  "")        echo "usage: hud apps | refresh | pubg | codm | genshin | roblox | coc | <bundle id> | '<Name — bundle id>'"; exit 0 ;;
+  inmost)    BUNDLE="com.chucklefish.inmost" ;;  # no anti-cheat: a safe first test
+  "")        echo "usage: hud apps | refresh | pubg | codm | genshin | roblox | coc | inmost | <bundle id> | '<Name — bundle id>'"; exit 0 ;;
   *)
     BUNDLE="${arg##* }"  # a list line "Name — bundle" -> the bundle id
     # Trust boundary: SSH input. Only plain bundle ids, nothing a shell could interpret.

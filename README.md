@@ -93,8 +93,9 @@ pymobiledevice3 usbmux list            # copy the UniqueDeviceID into UDID=
 Keep the iPhone unlocked and on the same Wi-Fi.
 
 ```bash
-./hud pubg                           # built-in names: pubg codm genshin roblox coc
-./hud com.chucklefish.inmost         # any bundle id
+./hud inmost                         # a game with no anti-cheat: a safe first test
+./hud pubg                           # built-in names: pubg codm genshin roblox coc inmost
+./hud com.miHoYo.GenshinImpact       # any bundle id
 ./hud apps                           # list installed apps (cached for a day)
 ./hud refresh                        # re-read the app list from the iPhone
 ```
