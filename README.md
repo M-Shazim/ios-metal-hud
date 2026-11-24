@@ -1,258 +1,153 @@
-# iOS Metal HUD Wireless Launcher
+# iOS Metal HUD Launcher
 
-Launch any iOS app with the **Metal performance HUD** — wirelessly, no Xcode, no jailbreak.
+Launch any iOS game with Apple's **Metal performance HUD** (FPS, frame time, GPU time, memory),
+**wirelessly**, with **no Xcode, no jailbreak and no root**. Optionally, launch it with **one tap
+from the iPhone itself**.
 
 ```
-FPS  |  GPU %  |  Memory  |  Draw Calls  |  Metal Resources
-─────────────────────────────────────────────────────────────
- 60  |   45%   |  2.7 GB  |    2,341     |     387
+iPhone  ──Wi-Fi or Tailscale──  any Linux/macOS machine running `hud`
+                                 └─ launches the game with MTL_HUD_ENABLED=1
 ```
 
-Works on **Linux**, **macOS**, and **Windows** (WSL2).
+- **Local:** the computer and the iPhone are on the same Wi-Fi.
+- **Remote:** the computer is a cloud server, and the iPhone runs Tailscale. Launch from anywhere,
+  and tap a home-screen Shortcut to start a game. See **[docs/remote-and-shortcuts.md](docs/remote-and-shortcuts.md)**.
+
+No app code is modified and nothing is injected. `MTL_HUD_ENABLED` is Apple's own debug switch,
+set when the game launches, exactly as Xcode does it.
 
 ---
 
-## How It Works
+## Requirements
 
-Apple's Metal HUD (`MTL_HUD_ENABLED=1`) is a built-in GPU debug overlay. Normally only available through Xcode. This tool uses [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) to enable it on any app over WiFi.
+| | |
+|--|--|
+| Computer | Linux or macOS with **Python 3.13+** (needed for the TLS-PSK ciphers) |
+| iPhone | iOS 17 or later, with a passcode (Developer Mode is enabled in setup) |
+| Cable | A USB cable, **once**, for pairing |
+| Tools | `pipx install --python python3.13 pymobiledevice3` |
+| Linux only | `sudo apt install usbmuxd libimobiledevice-utils` |
 
-No app code is modified. No memory is patched. No cheating — it's Apple's own debug tool.
-
----
-
-## Prerequisites
-
-| | Linux | macOS | Windows |
-|--|-------|-------|---------|
-| **Python** | 3.13+ | 3.13+ | 3.13+ |
-| **pipx** | `sudo apt install pipx` | `brew install pipx` | `pip install pipx` |
-| **usbmuxd** | `sudo apt install usbmuxd` | Bundled | iTunes provides it |
-| **pymobiledevice3** | `pipx install pymobiledevice3` | same | same |
+Tested with pymobiledevice3 9.33.1 on an iPhone 15 Pro Max running iOS 27.2, from Pop!_OS and Ubuntu.
 
 ---
 
-## Installation
+## One-time setup (USB)
 
-### 1. Install Python 3.13+
+Plug the iPhone in, unlock it, and tap **Trust** when it asks.
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt update
-sudo apt install python3.13 python3.13-venv python3.13-dev -y
-```
-
-**macOS:**
-```bash
-brew install python@3.13
-```
-
-**Windows:**
-Download from [python.org](https://python.org) — check "Add to PATH" during install.
-
-### 2. Install pymobiledevice3
-
-```bash
-pipx install --python python3.13 pymobiledevice3
-```
-
-Verify:
-```bash
-pymobiledevice3 version
-# → 9.x.x
-```
-
-### 3. Linux only — install usbmuxd
-
-```bash
-sudo apt install usbmuxd -y
-sudo systemctl restart usbmuxd
-```
-
-macOS has it built-in. Windows needs iTunes (provides the usbmux driver).
-
----
-
-## First-Time Setup (Pairing)
-
-Do this once with a **USB cable**.
-
-### Connect & pair
-
-1. Plug iPhone into computer via USB
-2. Unlock iPhone — tap **Trust This Computer**
-3. Run:
+**1. Pair**
 
 ```bash
 pymobiledevice3 lockdown pair
 ```
 
-If it fails with `BadDevError`, use `idevicepair` instead:
+If that fails with `BadDevError` (common on Linux), use libimobiledevice instead. pymobiledevice3
+reads its pair record through usbmuxd:
 
 ```bash
-# Linux
-sudo apt install libimobiledevice-utils -y
-
-# macOS
-brew install libimobiledevice
-
-idevicepair unpair
-idevicepair pair
-
-# Copy the pair record for pymobiledevice3
-mkdir -p ~/.pymobiledevice3
-cp /var/lib/lockdown/*.plist ~/.pymobiledevice3/ 2>/dev/null
-cp /var/db/lockdown/*.plist ~/.pymobiledevice3/ 2>/dev/null
+idevicepair pair && idevicepair validate
 ```
 
-### Enable WiFi connections
+If the iPhone isn't detected after replugging (`idevice_id -l` is empty), restart usbmuxd:
+`sudo systemctl restart usbmuxd`.
+
+**2. Allow Wi-Fi connections**
 
 ```bash
 pymobiledevice3 lockdown wifi-connections --state on
 ```
 
-### ⚠️ Important iPhone setting
+**3. Enable Developer Mode** (required to launch apps with debug settings)
 
-**Settings → WiFi → tap (i) → Private Wi-Fi Address → OFF**
+```bash
+pymobiledevice3 amfi enable-developer-mode    # works only if the iPhone has NO passcode
+pymobiledevice3 amfi reveal-developer-mode    # otherwise: reveal the toggle, then...
+```
 
-iOS rotates private MACs by default, which breaks device discovery.
+…on the iPhone, go to **Settings → Privacy & Security → Developer Mode → On → Restart**, then tap
+**Turn On** after the reboot. Check it with `pymobiledevice3 amfi developer-mode-status`.
+
+**4. Create the Wi-Fi pairing record**, still over USB, with no prompt on the phone:
+
+```bash
+pymobiledevice3 lockdown remotepairing --pair
+```
+
+This writes `~/.pymobiledevice3/remote_<UDID>.plist`. After this, unplug; you won't need the cable again.
+
+**5. Configure**
+
+```bash
+git clone https://github.com/M-Shazim/ios-metal-hud && cd ios-metal-hud
+cp config.example.env config.env
+pymobiledevice3 usbmux list            # copy the UniqueDeviceID into UDID=
+```
+
+> You do **not** need to turn off *Private Wi-Fi Address*. Discovery works with it on.
 
 ---
 
 ## Usage
 
-### Wireless (WiFi — same network)
+Keep the iPhone unlocked and on the same Wi-Fi.
 
 ```bash
-./hud_launcher.sh
+./hud pubg                           # built-in names: pubg codm genshin roblox coc
+./hud com.chucklefish.inmost         # any bundle id
+./hud apps                           # list installed apps (cached for a day)
+./hud refresh                        # re-read the app list from the iPhone
 ```
 
-Select an app. The script will:
-1. Create a RemotePairing TCP tunnel over WiFi
-2. Launch the app with `MTL_HUD_ENABLED=1`
-3. Metal HUD overlays on your iPhone screen
-
-### Manual wireless
-
-```bash
-# Terminal 1: Create tunnel
-sudo pymobiledevice3 remote start-tunnel -t wifi --protocol tcp --udid <UDID>
-
-# Terminal 2: Launch app
-pymobiledevice3 developer dvt launch com.tencent.ig \
-  --env MTL_HUD_ENABLED=1 \
-  --rsd <RSD_ADDRESS> <RSD_PORT>
+```
+$ ./hud pubg
+✓ launched com.tencent.ig pid 835
 ```
 
-### Wired (USB)
-
-```bash
-pymobiledevice3 developer dvt launch com.tencent.ig \
-  --env MTL_HUD_ENABLED=1 --userspace
-```
+The HUD stays until the game is closed. Launching from the home screen opens the game without it.
 
 ---
 
-## The Script
+## How it works
 
-### `hud_launcher.sh`
+`hud.py` uses pymobiledevice3 to:
 
-```bash
-#!/bin/bash
+1. find the iPhone on the Wi-Fi via Bonjour (`_remotepairing._tcp`), or connect to the IP you give it;
+2. open the RemotePairing tunnel using pymobiledevice3's **userspace network stack**, so no
+   TUN device, no sudo and no `tunneld` are needed;
+3. ask the developer service to launch the bundle with `MTL_HUD_ENABLED=1`, then exit.
 
-PMD_PATH="$HOME/.local/bin/pymobiledevice3"
-[ ! -f "$PMD_PATH" ] && PMD_PATH="pymobiledevice3"
-
-# ── Set your device UDID here ──
-# Find it with: pymobiledevice3 usbmux list
-UDID="<your-device-uuid>"
-
-clear
-echo "========== iOS Metal HUD Launcher =========="
-echo "1) Clash of Clans"
-echo "2) PUBG Mobile"
-echo "3) Exit"
-read -p "Choice [1-3]: " choice
-
-case $choice in
-    1) BUNDLE="com.supercell.magic" ;;
-    2) BUNDLE="com.tencent.ig" ;;
-    3) exit 0 ;;
-    *) echo "Invalid"; exit 1 ;;
-esac
-
-echo "Starting tunnel..."
-sudo "$PMD_PATH" remote start-tunnel -t wifi --protocol tcp \
-  --udid "$UDID" > /tmp/tunnel_out.txt 2>&1 &
-TUNNEL_PID=$!
-
-sleep 8
-RSD_ADDR=$(grep "RSD Address:" /tmp/tunnel_out.txt | awk '{print $NF}')
-RSD_PORT=$(grep "RSD Port:" /tmp/tunnel_out.txt | awk '{print $NF}')
-
-"$PMD_PATH" developer dvt launch "$BUNDLE" --env MTL_HUD_ENABLED=1 \
-  --rsd "$RSD_ADDR" "$RSD_PORT" 2>&1 | grep -v "LSSupportsGameMode"
-
-kill $TUNNEL_PID 2>/dev/null
-```
-
-### Adding apps
-
-Edit the `case` block with bundle IDs:
-
-| App | Bundle ID |
-|-----|-----------|
-| Clash of Clans | `com.supercell.magic` |
-| PUBG Mobile | `com.tencent.ig` |
-| Call of Duty Mobile | `com.activision.callofduty.shooter` |
-| Genshin Impact | `com.miHoYo.GenshinImpact` |
-| Roblox | `com.roblox.Roblox` |
-| Brawl Stars | `com.supercell.brawlstars` |
-
-Find any app's bundle ID:
-```bash
-pymobiledevice3 apps list | grep -i "name"
-```
-
----
-
-## Finding Your UDID
-
-```bash
-pymobiledevice3 usbmux list
-```
-
-Look for `UniqueDeviceID`. Replace it in the script.
+`hud` is a small wrapper around it: it holds the config, short names, the app-list cache and a
+retry, and validates input so it can safely serve as an SSH forced command.
 
 ---
 
 ## Troubleshooting
 
 | Symptom | Fix |
-|---------|-----|
-| `BadDevError` during pair | Reinstall usbmuxd: `sudo apt install --reinstall usbmuxd` |
-| Tunnel needs root | `sudo` is required for TUN/TAP device creation |
-| `NO_CIPHERS_AVAILABLE` | Install Python 3.13+ (needed for PSK ciphers) |
-| `QuicProtocolNotSupportedError` | Use `--protocol tcp` flag |
-| Bonjour shows no device | Disable Private Wi-Fi Address on iPhone |
-| `Device is not connected` | Verify iPhone and computer are on same WiFi subnet |
-| Pairing fails over network | Pair over USB first, then copy the record |
+|--|--|
+| `BadDevError` during `lockdown pair` | Use `idevicepair pair` (step 1) |
+| `Cannot enable developer-mode when passcode is set` | Use `amfi reveal-developer-mode` and the Settings toggle (step 3) |
+| iPhone not detected over USB after replugging | `sudo systemctl restart usbmuxd` |
+| `iPhone not found on Wi-Fi` | Unlock it, check that both are on the same network, and that step 4 was done |
+| `NO_CIPHERS_AVAILABLE` | Use Python 3.13+ |
+| `ConnectionTerminatedError` from another machine | Set `HUD_PAIR_HOST` (see the remote guide) |
+| First launch hangs | `hud` retries once automatically; the first connection after idle can stall |
+| No HUD in a game | The app may not render with Metal, or may disable the HUD |
 
 ---
 
 ## FAQ
 
-**Is this considered cheating?**
-No. It enables Apple's built-in debug overlay — no game code is modified or inspected.
+**Can it get me banned?**
+Unknown. Use it at your own risk. Nothing in the game is modified, and the HUD is Apple's own
+overlay. But a game's anti-cheat *could* notice that Developer Mode is on or that the game was
+started through the developer service. Try it on a spare or guest account before using it on your
+main account in online or ranked play.
 
-**Does it work with any app?**
-Any app that uses Metal for rendering. Some apps may explicitly disable the HUD.
+**Does it need a computer?**
+Something has to start the launch: a machine on the same Wi-Fi, or any server once the iPhone is on
+Tailscale. iOS doesn't let an app launch other apps with debug settings.
 
-**Will it get me banned?**
-It's the same mechanism Xcode and Instruments use. No game data is touched. As with any third-party tool, use at your own risk.
-
-**Can I use this without a computer?**
-No. You need a Linux/macOS/Windows machine to run pymobiledevice3.
-
-**Does it work over cellular?**
-Only if both devices are on the same Tailscale mesh network.
+**Can I turn Developer Mode off afterwards?**
+Yes, in Settings → Privacy & Security. Launches stop working until you turn it back on.
