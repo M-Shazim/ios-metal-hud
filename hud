@@ -20,7 +20,7 @@ run() { timeout 40 "$PY" -I "$DIR/hud.py" "$UDID" "$1" ${IPHONE_IP:+"$IPHONE_IP"
 
 fetch_apps() {  # "Name — bundle" per line, sorted by name
   local out
-  out=$(run --apps 2>/dev/null) || return 1
+  out=$(run --apps 2>/dev/null) || out=$(run --apps 2>/dev/null) || return 1  # retry the idle stall
   printf '%s\n' "$out" | awk -F'\t' 'NF==3 {print $2 " — " $3}' | sort -f > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE"
 }
 
