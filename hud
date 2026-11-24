@@ -1,0 +1,53 @@
+#!/bin/bash
+# hud <game>  — launch an iOS app with the Metal HUD, no root needed.
+# Also works as an SSH forced command: the game then comes from $SSH_ORIGINAL_COMMAND.
+# Settings live in config.env next to this script (see config.example.env).
+set -u
+DIR="$(cd "$(dirname "$0")" && pwd)"
+UDID="" IPHONE_IP="" HUD_PAIR_HOST="" PY="$HOME/.local/share/pipx/venvs/pymobiledevice3/bin/python"
+# shellcheck source=config.example.env
+[[ -f "$DIR/config.env" ]] && source "$DIR/config.env"
+[[ -n "$UDID" ]] || { echo "✗ set UDID in $DIR/config.env"; exit 1; }
+[[ -n "$HUD_PAIR_HOST" ]] && export HUD_PAIR_HOST
+CACHE="$DIR/apps.txt"
+
+arg="${1:-${SSH_ORIGINAL_COMMAND:-}}"
+arg="${arg#hud }"  # allow "hud pubg" as well as "pubg"
+arg="$(printf '%s' "$arg" | tr -d '\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"  # Shortcuts may add stray whitespace
+printf '%s %q\n' "$(date -u +%FT%TZ)" "$arg" >> "$DIR/hud.log"  # %q logs exactly what arrived, safely
+
+run() { timeout 40 "$PY" -I "$DIR/hud.py" "$UDID" "$1" ${IPHONE_IP:+"$IPHONE_IP"}; }
+
+fetch_apps() {  # "Name — bundle" per line, sorted by name
+  local out
+  out=$(run --apps 2>/dev/null) || return 1
+  printf '%s\n' "$out" | awk -F'\t' 'NF==3 {print $2 " — " $3}' | sort -f > "$CACHE.tmp" && mv "$CACHE.tmp" "$CACHE"
+}
+
+case "$arg" in
+  apps)
+    # Serve the cached list instantly; refresh it if it's over a day old or missing.
+    if [[ -z $(find "$CACHE" -mmin -1440 2>/dev/null) ]]; then fetch_apps || { echo "✗ couldn't read apps — iPhone unlocked and reachable?"; exit 1; }; fi
+    cat "$CACHE"; exit 0 ;;
+  refresh)   fetch_apps && cat "$CACHE"; exit $? ;;
+  pubg)      BUNDLE="com.tencent.ig" ;;
+  codm)      BUNDLE="com.activision.callofduty.shooter" ;;
+  genshin)   BUNDLE="com.miHoYo.GenshinImpact" ;;
+  roblox)    BUNDLE="com.roblox.Roblox" ;;
+  coc)       BUNDLE="com.supercell.magic" ;;
+  "")        echo "usage: hud apps | refresh | pubg | codm | genshin | roblox | coc | <bundle id> | '<Name — bundle id>'"; exit 0 ;;
+  *)
+    BUNDLE="${arg##* }"  # a list line "Name — bundle" -> the bundle id
+    # Trust boundary: SSH input. Only plain bundle ids, nothing a shell could interpret.
+    [[ "$BUNDLE" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{2,100}$ ]] || { echo "unknown game: $arg"; exit 2; }
+    ;;
+esac
+
+# The first connection after idle sometimes stalls; one retry covers it.
+for attempt in 1 2; do
+  out=$(run "$BUNDLE" 2>&1)
+  if [[ "$out" == launched* ]]; then echo "✓ $out"; exit 0; fi
+done
+echo "✗ launch failed — iPhone unlocked and reachable?"
+echo "$out" | tail -1
+exit 1

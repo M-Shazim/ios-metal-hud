@@ -2,3 +2,9 @@
 __pycache__/
 .env
 *.plist
+
+# Local state
+config.env
+apps.txt
+apps.txt.tmp
+hud.log
